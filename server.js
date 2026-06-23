@@ -1,6 +1,6 @@
 const express = require('express');
-const Database = require('better-sqlite3');
-const path = require('path');
+const db = require('./src/db/database');
+const { startImapListener } = require('./src/ingest/imapService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,26 +14,6 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
-
-// Initialize SQLite Database
-const dbPath = path.join(__dirname, 'data', 'alarms.sqlite');
-const db = new Database(dbPath);
-
-// Crucial: Set WAL mode and synchronous pragmas
-db.pragma('journal_mode = WAL');
-db.pragma('synchronous = NORMAL');
-
-// Initialize table
-db.exec(`
-  CREATE TABLE IF NOT EXISTS alarms (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    keyword TEXT,
-    location TEXT,
-    units TEXT,
-    raw_text TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`);
 
 // Basic health endpoint
 app.get('/', (req, res) => {
@@ -65,6 +45,9 @@ app.get('/alarms', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
+
+  // Start IMAP listener in the background
+  startImapListener();
 });
 
 // Graceful shutdown
