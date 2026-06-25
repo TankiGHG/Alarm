@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tactical Monitor</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="monitor-header">
+            <div>
+                <h1>Tactical Monitor</h1>
+                <p style="color: var(--text-secondary)" id="statusText">Awaiting Dispatch</p>
+            </div>
+            <div class="tactical-timer" id="timer">00:00</div>
+        </div>
+
+        <div id="alarmsContainer"></div>
+    </div>
+
+    <script>
+        let timerInterval;
+        let activeAlarmTime = null;
+
+        function pad(num) {
+            return num.toString().padStart(2, '0');
+        }
+
+        function updateTimer() {
+            if (!activeAlarmTime) return;
+            const now = new Date();
+            let diff = Math.floor((now - activeAlarmTime) / 1000);
+
+            if (diff < 0) diff = 0;
+
+            const mins = Math.floor(diff / 60);
+            const secs = diff % 60;
+            document.getElementById('timer').innerText = `${pad(mins)}:${pad(secs)}`;
+        }
+
+        function startTimer() {
+            activeAlarmTime = new Date();
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(updateTimer, 1000);
+            updateTimer();
+        }
+
+        function createAlarmElement(alarm, isActive = false) {
+            const div = document.createElement('div');
+            div.className = `alarm-card ${isActive ? '' : 'inactive'}`;
+            div.innerHTML = `
+                <div class="alarm-title">${alarm.keyword}</div>
+                <div class="alarm-details">
+                    <span><strong>Location:</strong> ${alarm.location}</span>
+                    <span><strong>Units:</strong> ${alarm.units}</span>
+                    <span><strong>Time:</strong> ${alarm.timestamp}</span>
+                </div>
+                <div class="alarm-raw">${alarm.raw_text}</div>
+            `;
+            return div;
+        }
+
+        async function loadInitialAlarms() {
+            try {
+                const res = await fetch('/api/alarms');
+                if (res.status === 401) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+                const alarms = await res.json();
+
+                const container = document.getElementById('alarmsContainer');
+                alarms.forEach((alarm, index) => {
+                    const isActive = index === 0;
+                    container.appendChild(createAlarmElement(alarm, isActive));
+                });
+
+                if (alarms.length > 0) {
+                    document.getElementById('statusText').innerText = "Active Incident";
+                    startTimer();
+                } else {
+                    document.getElementById('alarmsContainer').innerHTML = "<div class='alarm-card inactive'>No alarms found</div>";
+                }
+            } catch (err) {
+                console.error("Failed to load alarms", err);
+            }
+        }
+
+        function initSSE() {
+            const evtSource = new EventSource('/api/stream');
+            evtSource.addEventListener('new_alarm', (e) => {
+                const alarm = JSON.parse(e.data);
+                const container = document.getElementById('alarmsContainer');
+
+                // Clear the dummy "No alarms found" message if needed
+                if (container.innerText === 'No alarms found') {
+                    container.innerHTML = '';
+                }
+
+                const activeCards = container.querySelectorAll('.alarm-card:not(.inactive)');
+                activeCards.forEach(c => c.classList.add('inactive'));
+
+                container.prepend(createAlarmElement(alarm, true));
+                document.getElementById('statusText').innerText = "Active Incident";
+
+                startTimer();
+            });
+
+            evtSource.onerror = (err) => {
+                console.error("EventSource failed:", err);
+            };
+        }
+
+        // Wait a small bit so body is definitely fully parsed
+        window.addEventListener('DOMContentLoaded', () => {
+            loadInitialAlarms();
+            initSSE();
+        });
+    </script>
+</body>
+</html>

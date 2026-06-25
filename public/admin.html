@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h1>Admin Dashboard</h1>
+            <div>
+                <a href="/monitor.html" style="margin-right: 1rem;">View Monitor</a>
+                <button id="logoutBtn" class="danger">Logout</button>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <!-- Trigger Alarm -->
+            <div class="panel">
+                <h2>Manual Alarm Trigger</h2>
+                <form id="alarmForm">
+                    <input type="text" id="a_keyword" placeholder="Keyword (e.g. Brand B3)" required>
+                    <input type="text" id="a_location" placeholder="Location" required>
+                    <input type="text" id="a_units" placeholder="Units (comma separated)" required>
+                    <input type="text" id="a_raw" placeholder="Raw Description" required>
+                    <button type="submit">Dispatch Alarm</button>
+                </form>
+            </div>
+
+            <!-- Manage Vehicles -->
+            <div class="panel">
+                <h2>Vehicles</h2>
+                <form id="vehicleForm" style="display:flex; gap: 0.5rem; margin-bottom: 1rem;">
+                    <input type="text" id="v_callsign" placeholder="Callsign (e.g. Florian 1/46/1)" required style="margin-bottom:0">
+                    <button type="submit">Add</button>
+                </form>
+                <ul id="vehicleList"></ul>
+            </div>
+
+            <!-- Manage Crew -->
+            <div class="panel">
+                <h2>Crew Members</h2>
+                <form id="crewForm" style="display:flex; gap: 0.5rem; margin-bottom: 1rem;">
+                    <input type="text" id="c_name" placeholder="Name" required style="margin-bottom:0">
+                    <select id="c_role" style="padding: 0.5rem; border-radius: 4px; background: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color);">
+                        <option value="Gruppenführer">Gruppenführer</option>
+                        <option value="Maschinist">Maschinist</option>
+                        <option value="Angriffstrupp">Angriffstrupp</option>
+                        <option value="Wassertrupp">Wassertrupp</option>
+                    </select>
+                    <button type="submit">Add</button>
+                </form>
+                <ul id="crewList"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function fetchAPI(url, options = {}) {
+            const res = await fetch(url, options);
+            if (res.status === 401) window.location.href = '/login.html';
+            return res;
+        }
+
+        async function loadVehicles() {
+            const res = await fetchAPI('/api/vehicles');
+            const data = await res.json();
+            const list = document.getElementById('vehicleList');
+            list.innerHTML = '';
+            data.forEach(v => {
+                const li = document.createElement('li');
+                li.className = 'list-item';
+                li.innerText = v.callsign;
+                list.appendChild(li);
+            });
+        }
+
+        async function loadCrew() {
+            const res = await fetchAPI('/api/crew');
+            const data = await res.json();
+            const list = document.getElementById('crewList');
+            list.innerHTML = '';
+            data.forEach(c => {
+                const li = document.createElement('li');
+                li.className = 'list-item';
+                li.innerText = `${c.name} (${c.role})`;
+                list.appendChild(li);
+            });
+        }
+
+        document.getElementById('vehicleForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const callsign = document.getElementById('v_callsign').value;
+            await fetchAPI('/api/vehicles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ callsign })
+            });
+            document.getElementById('v_callsign').value = '';
+            loadVehicles();
+        });
+
+        document.getElementById('crewForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('c_name').value;
+            const role = document.getElementById('c_role').value;
+            await fetchAPI('/api/crew', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, role })
+            });
+            document.getElementById('c_name').value = '';
+            loadCrew();
+        });
+
+        document.getElementById('alarmForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const keyword = document.getElementById('a_keyword').value;
+            const location = document.getElementById('a_location').value;
+            const units = document.getElementById('a_units').value;
+            const raw_text = document.getElementById('a_raw').value;
+
+            await fetchAPI('/api/alarms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keyword, location, units, raw_text })
+            });
+
+            document.getElementById('alarmForm').reset();
+            alert('Alarm dispatched!');
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await fetchAPI('/api/logout', { method: 'POST' });
+            window.location.href = '/login.html';
+        });
+
+        loadVehicles();
+        loadCrew();
+    </script>
+</body>
+</html>
