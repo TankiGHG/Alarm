@@ -107,68 +107,6 @@ button.danger {
     max-width: 400px;
 }
 
-/* Monitor Specifics */
-.monitor-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid var(--border-color);
-    padding-bottom: 1rem;
-    margin-bottom: 2rem;
-}
-
-.tactical-timer {
-    font-family: var(--font-mono);
-    font-size: 3rem;
-    font-weight: bold;
-    color: var(--accent-red);
-    text-shadow: 0 0 10px rgba(218, 54, 51, 0.5);
-}
-
-.alarm-card {
-    background-color: var(--panel-bg);
-    border: 1px solid var(--border-color);
-    border-left: 5px solid var(--accent-red);
-    padding: 1.5rem;
-    margin-bottom: 1rem;
-    border-radius: 4px;
-    animation: slideIn 0.3s ease-out;
-}
-
-.alarm-card.inactive {
-    border-left-color: var(--border-color);
-    opacity: 0.7;
-}
-
-.alarm-title {
-    font-size: 1.5rem;
-    margin-bottom: 0.5rem;
-    font-family: var(--font-mono);
-}
-
-.alarm-details {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1.5rem;
-    margin-bottom: 1rem;
-    color: var(--text-secondary);
-}
-
-.alarm-raw {
-    font-family: var(--font-mono);
-    font-size: 0.875rem;
-    background-color: var(--bg-color);
-    padding: 0.75rem;
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-    white-space: pre-wrap;
-}
-
-@keyframes slideIn {
-    from { transform: translateY(-20px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
 /* Lists */
 ul {
     list-style: none;
@@ -189,233 +127,279 @@ li.list-item {
     margin: 0;
 }
 
-.monitor-layout {
+.monitor-grid-container {
     display: flex;
+    flex-direction: column;
     height: 100vh;
-    padding: 1rem;
-    gap: 1rem;
+    padding: 10px;
+    gap: 10px;
 }
 
-.monitor-main {
-    flex: 3;
-    display: flex;
-    flex-direction: column;
-    background-color: #0f1115;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 2rem;
-    overflow: hidden;
-}
-
-.monitor-sidebar {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    max-width: 400px;
-}
-
-.monitor-top-bar {
+/* Header */
+.monitor-header {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    border-bottom: 2px solid #30363d;
-    padding-bottom: 1rem;
-    margin-bottom: 2rem;
+    align-items: center;
+    background-color: #111;
+    border: 1px solid #333;
+    padding: 10px 20px;
+    height: 80px;
 }
 
 .status-indicator {
-    font-size: 2.5rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    padding: 0.5rem 1rem;
+    font-size: 2rem;
+    font-weight: bold;
+    padding: 10px 20px;
     border-radius: 4px;
 }
 
 .status-indicator.inactive {
-    color: #8b949e;
-    background-color: #21262d;
+    background-color: #333;
+    color: #888;
 }
 
 .status-indicator.active {
+    background-color: #d00;
     color: #fff;
-    background-color: #da3633;
-    animation: pulse 2s infinite;
+    animation: blink 1s infinite alternate;
 }
 
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.8; }
-    100% { opacity: 1; }
+@keyframes blink {
+    from { opacity: 1; }
+    to { opacity: 0.5; }
+}
+
+.header-title {
+    font-size: 2rem;
+    font-weight: bold;
+    letter-spacing: 2px;
 }
 
 .clocks-container {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 5px 15px;
+    align-items: center;
+}
+
+.clock-label, .timer-label {
+    font-size: 1rem;
+    color: #aaa;
     text-align: right;
 }
 
-.realtime-clock {
-    font-size: 2rem;
+.realtime-clock, .tactical-timer {
     font-family: var(--font-mono);
-    color: #8b949e;
+    font-size: 1.5rem;
+    font-weight: bold;
 }
 
 .tactical-timer {
-    font-size: 4rem;
-    font-family: var(--font-mono);
-    font-weight: bold;
-    color: #da3633;
-    line-height: 1;
+    color: #d00;
 }
 
-.active-alarm-container {
+/* Main Grid Layout */
+.main-content-grid {
+    display: flex;
+    flex: 1;
+    gap: 10px;
+    overflow: hidden;
+}
+
+.left-column {
     flex: 1;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    gap: 10px;
 }
 
-.no-alarm-msg {
-    text-align: center;
-    font-size: 2rem;
-    color: #8b949e;
+.center-column {
+    flex: 2;
+    display: flex;
+    flex-direction: column;
+}
+
+.right-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Generic Widget Style */
+.widget {
+    background-color: #111;
+    border: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.widget-title {
+    background-color: #222;
+    color: #ddd;
+    padding: 8px 12px;
+    font-size: 1.2rem;
+    margin: 0;
+    border-bottom: 1px solid #333;
+    text-transform: uppercase;
+}
+
+/* Specific Widgets */
+.alarm-widget {
+    flex: 2;
+}
+
+.weather-widget {
+    flex: 1;
+}
+
+.map-widget {
+    flex: 1;
+}
+
+.assignments-widget {
+    flex: 1;
+}
+
+.recent-alarms-widget {
+    flex: 1;
+}
+
+/* Map Container */
+.map-container {
+    width: 100%;
+    height: 100%;
+    background-color: #222; /* Fallback before map loads */
+}
+
+/* Alarm Details Formatting */
+.active-alarm-container {
+    padding: 15px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 
 .active-alarm-keyword {
-    font-size: 6rem;
-    font-weight: 800;
-    color: #da3633;
-    line-height: 1.1;
-    text-transform: uppercase;
-    word-wrap: break-word;
-    margin-bottom: 1rem;
+    font-size: 3rem;
+    color: #f00;
+    font-weight: bold;
+    margin-bottom: 10px;
 }
 
 .active-alarm-location {
-    font-size: 3rem;
-    font-weight: 600;
-    color: #f0f6fc;
-    margin-bottom: 1.5rem;
-    background-color: #21262d;
-    padding: 1rem;
-    border-radius: 8px;
-    border-left: 8px solid #da3633;
+    font-size: 2rem;
+    background-color: #222;
+    padding: 10px;
+    border-left: 5px solid #f00;
+    margin-bottom: 15px;
 }
 
 .active-alarm-units {
-    font-size: 2.5rem;
-    color: #58a6ff;
-    margin-bottom: 2rem;
+    font-size: 1.5rem;
+    color: #0af;
+    margin-bottom: 15px;
 }
 
 .active-alarm-raw {
-    font-size: 1.5rem;
+    font-size: 1rem;
+    color: #aaa;
     font-family: var(--font-mono);
-    color: #8b949e;
     white-space: pre-wrap;
     background-color: #000;
-    padding: 1rem;
-    border-radius: 4px;
-    border: 1px solid #30363d;
-    margin-top: auto;
+    padding: 10px;
+    border: 1px solid #333;
+    flex-grow: 1;
 }
 
-.monitor-panel {
-    background-color: #0f1115;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 1rem;
-}
-
-.panel-title {
-    font-size: 1.25rem;
-    color: #8b949e;
-    text-transform: uppercase;
-    border-bottom: 1px solid #30363d;
-    padding-bottom: 0.5rem;
-    margin-bottom: 1rem;
-}
-
+/* Assignments List */
 .assignments-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0.5rem;
-    max-height: 40vh;
+    padding: 10px;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .assignment-tile {
-    background-color: #21262d;
-    border-radius: 6px;
-    padding: 0.75rem;
-    border-left: 4px solid #238636;
+    background-color: #222;
+    padding: 10px;
+    border-left: 4px solid #0a0;
 }
 
 .vehicle-title {
-    font-size: 1.25rem;
+    font-size: 1.2rem;
     font-weight: bold;
-    color: #f0f6fc;
-    margin-bottom: 0.5rem;
+    margin-bottom: 5px;
 }
 
 .crew-row {
     font-size: 0.9rem;
-    color: #c9d1d9;
-    padding-left: 0.5rem;
-    border-left: 2px solid #30363d;
-    margin-bottom: 0.25rem;
+    color: #ccc;
 }
 
-.no-assignments {
-    color: #8b949e;
-    font-style: italic;
-    padding: 1rem;
-    text-align: center;
-}
-
+/* Recent Alarms */
 .recent-alarms-list {
-    flex: 1;
+    padding: 10px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 10px;
 }
 
 .recent-alarm-card {
-    background-color: #21262d;
-    border-radius: 6px;
-    padding: 0.75rem;
-    border-left: 4px solid #8b949e;
+    background-color: #222;
+    padding: 10px;
+    border-left: 4px solid #777;
 }
 
 .recent-keyword {
     font-weight: bold;
-    color: #f0f6fc;
+    font-size: 1.1rem;
 }
 
 .recent-location {
     font-size: 0.9rem;
-    color: #8b949e;
+    color: #aaa;
 }
 
 .recent-time {
     font-size: 0.8rem;
-    color: #58a6ff;
+    color: #666;
     text-align: right;
-    margin-top: 0.25rem;
 }
 
-/* Custom scrollbar for monitor panels */
-.monitor-panel ::-webkit-scrollbar {
-    width: 6px;
+/* Weather */
+.weather-container {
+    padding: 15px;
+    font-size: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
 }
-.monitor-panel ::-webkit-scrollbar-track {
-    background: #0f1115;
+
+.weather-temp {
+    font-size: 3rem;
+    font-weight: bold;
+    color: #ffaa00;
 }
-.monitor-panel ::-webkit-scrollbar-thumb {
-    background: #30363d;
-    border-radius: 3px;
+
+/* Scrollbars */
+::-webkit-scrollbar {
+    width: 8px;
 }
-.monitor-panel ::-webkit-scrollbar-thumb:hover {
-    background: #8b949e;
+::-webkit-scrollbar-track {
+    background: #111;
+}
+::-webkit-scrollbar-thumb {
+    background: #444;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #666;
 }

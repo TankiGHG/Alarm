@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 // Security headers middleware
 app.disable('x-powered-by'); // also works natively in Express
 app.use((req, res, next) => {
-  res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval'");
+  res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://*.tile.openstreetmap.org https://nominatim.openstreetmap.org https://api.open-meteo.com; img-src 'self' data: https://*.tile.openstreetmap.org https://unpkg.com");
   res.setHeader('X-Content-Type-Options', 'nosniff');
   next();
 });

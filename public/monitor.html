@@ -4,48 +4,138 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tactical Monitor</title>
+    <!-- Leaflet CSS for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="monitor-body">
-    <div class="monitor-layout">
-        <!-- Main Panel: Active Alarm -->
-        <main class="monitor-main">
-            <div class="monitor-top-bar">
-                <div id="statusIndicator" class="status-indicator inactive">AWAITING DISPATCH</div>
-                <div class="clocks-container">
-                    <div id="clock" class="realtime-clock">00:00:00</div>
-                    <div id="timer" class="tactical-timer">00:00</div>
+<body class="monitor-body dark-theme">
+    <div class="monitor-grid-container">
+        <!-- Header -->
+        <header class="monitor-header">
+            <div id="statusIndicator" class="status-indicator inactive">AWAITING DISPATCH</div>
+            <div class="header-title">Einsatzmonitor</div>
+            <div class="clocks-container">
+                <div class="clock-label">Zeit:</div>
+                <div id="clock" class="realtime-clock">00:00:00</div>
+                <div class="timer-label">Timer:</div>
+                <div id="timer" class="tactical-timer">00:00</div>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="main-content-grid">
+
+            <!-- Left Column -->
+            <div class="left-column">
+                <!-- Alarm Details -->
+                <div class="widget alarm-widget">
+                    <h2 class="widget-title">Einsatzdetails</h2>
+                    <div id="activeAlarmContainer" class="active-alarm-container">
+                        <div class="no-alarm-msg">Kein aktiver Einsatz</div>
+                    </div>
+                </div>
+
+                <!-- Weather -->
+                <div class="widget weather-widget">
+                    <h2 class="widget-title">Wetter</h2>
+                    <div id="weatherContainer" class="weather-container">
+                        Wetterdaten werden geladen...
+                    </div>
                 </div>
             </div>
 
-            <div id="activeAlarmContainer" class="active-alarm-container">
-                <div class="no-alarm-msg">No active incidents</div>
-            </div>
-        </main>
-
-        <!-- Sidebar: Assignments and History -->
-        <aside class="monitor-sidebar">
-            <div class="monitor-panel">
-                <h2 class="panel-title">Active Assignments</h2>
-                <div id="assignmentsGrid" class="assignments-grid">
-                    <!-- Assignments dynamically injected -->
+            <!-- Center Column: Map -->
+            <div class="center-column">
+                <div class="widget map-widget">
+                    <div id="mapContainer" class="map-container"></div>
                 </div>
             </div>
 
-            <div class="monitor-panel" style="flex: 1; display: flex; flex-direction: column;">
-                <h2 class="panel-title">Recent Alarms</h2>
-                <div id="recentAlarmsList" class="recent-alarms-list">
-                    <!-- Recent alarms dynamically injected -->
+            <!-- Right Column -->
+            <div class="right-column">
+                <!-- Assignments -->
+                <div class="widget assignments-widget">
+                    <h2 class="widget-title">Fahrzeuge & Status</h2>
+                    <div id="assignmentsGrid" class="assignments-grid">
+                        <!-- Assignments dynamically injected -->
+                    </div>
+                </div>
+
+                <!-- Recent Alarms -->
+                <div class="widget recent-alarms-widget">
+                    <h2 class="widget-title">Letzte Einsätze</h2>
+                    <div id="recentAlarmsList" class="recent-alarms-list">
+                        <!-- Recent alarms dynamically injected -->
+                    </div>
                 </div>
             </div>
-        </aside>
+
+        </div>
     </div>
 
+    <!-- Leaflet JS for Map -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script>
         let timerInterval;
         let clockInterval;
         let activeAlarmTime = null;
 
+        // --- Map Variables ---
+        let map;
+        let marker;
+
+        function initMap() {
+            map = L.map('mapContainer').setView([51.1657, 10.4515], 6); // Default center (Germany)
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Fix map sizing issues if container changes size
+            setTimeout(() => { map.invalidateSize(); }, 500);
+        }
+
+        async function updateMapLocation(locationString) {
+            if (!map) return;
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationString)}`);
+                const data = await res.json();
+                if (data && data.length > 0) {
+                    const lat = parseFloat(data[0].lat);
+                    const lon = parseFloat(data[0].lon);
+
+                    if (marker) {
+                        marker.setLatLng([lat, lon]);
+                    } else {
+                        marker = L.marker([lat, lon]).addTo(map);
+                    }
+                    map.setView([lat, lon], 15);
+                }
+            } catch (err) {
+                console.error("Geocoding failed", err);
+            }
+        }
+
+        // --- Weather Variables ---
+        async function fetchWeather() {
+            try {
+                // simple open-meteo query for a default location, e.g. Berlin
+                const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&current_weather=true');
+                const data = await res.json();
+                if (data && data.current_weather) {
+                    const cw = data.current_weather;
+                    document.getElementById('weatherContainer').innerHTML = `
+                        <div class="weather-temp">${cw.temperature}°C</div>
+                        <div class="weather-wind">Wind: ${cw.windspeed} km/h</div>
+                        <div class="weather-dir">Richtung: ${cw.winddirection}°</div>
+                    `;
+                }
+            } catch(e) {
+                console.error("Weather failed", e);
+            }
+        }
+
+        // --- Core Functions ---
         function pad(num) {
             return num.toString().padStart(2, '0');
         }
@@ -67,7 +157,6 @@
         }
 
         function startTimer(timestamp) {
-            // Attempt to parse timestamp or use current time
             activeAlarmTime = timestamp ? new Date(timestamp) : new Date();
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(updateTimer, 1000);
@@ -80,7 +169,6 @@
             activeAlarmTime = null;
         }
 
-        // Utility for escaping text to prevent XSS
         function escapeHtml(unsafe) {
             if (!unsafe) return '';
             return unsafe.toString()
@@ -96,16 +184,20 @@
             container.innerHTML = `
                 <div class="active-alarm-keyword">${escapeHtml(alarm.keyword)}</div>
                 <div class="active-alarm-location">${escapeHtml(alarm.location)}</div>
-                <div class="active-alarm-units"><strong>Units:</strong> ${escapeHtml(alarm.units)}</div>
+                <div class="active-alarm-units"><strong>Fahrzeuge:</strong> ${escapeHtml(alarm.units)}</div>
                 <div class="active-alarm-raw">${escapeHtml(alarm.raw_text)}</div>
             `;
 
             const statusInd = document.getElementById('statusIndicator');
-            statusInd.innerText = "ACTIVE INCIDENT";
+            statusInd.innerText = "EINSATZ AKTIV";
             statusInd.classList.remove('inactive');
             statusInd.classList.add('active');
 
             startTimer(alarm.timestamp);
+
+            if (alarm.location) {
+                updateMapLocation(alarm.location);
+            }
         }
 
         function createRecentAlarmElement(alarm) {
@@ -127,7 +219,6 @@
                     const grid = document.getElementById('assignmentsGrid');
                     grid.innerHTML = '';
 
-                    // Group by vehicle
                     const vehicleMap = {};
                     assignments.forEach(a => {
                         if (!vehicleMap[a.vehicle_callsign]) {
@@ -155,7 +246,7 @@
                         grid.appendChild(tile);
                     }
                     if (Object.keys(vehicleMap).length === 0) {
-                        grid.innerHTML = '<div class="no-assignments">No active assignments</div>';
+                        grid.innerHTML = '<div class="no-assignments">Keine aktiven Fahrzeuge</div>';
                     }
                 }
             } catch (e) {
@@ -176,15 +267,13 @@
                 recentList.innerHTML = '';
 
                 if (alarms.length > 0) {
-                    // First alarm is active
                     renderActiveAlarm(alarms[0]);
 
-                    // Rest are recent
                     for (let i = 1; i < alarms.length; i++) {
                         recentList.appendChild(createRecentAlarmElement(alarms[i]));
                     }
                 } else {
-                    document.getElementById('activeAlarmContainer').innerHTML = '<div class="no-alarm-msg">No active incidents</div>';
+                    document.getElementById('activeAlarmContainer').innerHTML = '<div class="no-alarm-msg">Kein aktiver Einsatz</div>';
                     stopTimer();
                 }
 
@@ -199,13 +288,12 @@
             evtSource.addEventListener('new_alarm', (e) => {
                 const newAlarm = JSON.parse(e.data);
 
-                // Move current active to recent list
                 const keywordEl = document.querySelector('.active-alarm-keyword');
                 if (keywordEl) {
                     const currentActive = {
                         keyword: keywordEl.innerText,
                         location: document.querySelector('.active-alarm-location').innerText,
-                        timestamp: new Date().toISOString() // approximation for list
+                        timestamp: new Date().toISOString()
                     };
                     const recentList = document.getElementById('recentAlarmsList');
                     recentList.prepend(createRecentAlarmElement(currentActive));
@@ -222,10 +310,12 @@
         window.addEventListener('DOMContentLoaded', () => {
             clockInterval = setInterval(updateClock, 1000);
             updateClock();
+            initMap();
+            fetchWeather();
             loadInitialData();
             initSSE();
-            // Refresh assignments periodically
             setInterval(loadAssignments, 30000);
+            setInterval(fetchWeather, 300000); // 5 minutes
         });
     </script>
 </body>
