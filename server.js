@@ -53,21 +53,33 @@ app.get('/api/stream', verifyToken, (req, res) => {
 
 // Endpoint to create an alarm
 app.post('/api/alarms', verifyToken, (req, res) => {
-  const { keyword, location, units, raw_text } = req.body;
-  try {
-    const stmt = db.prepare('INSERT INTO alarms (keyword, location, units, raw_text) VALUES (?, ?, ?, ?)');
-    const info = stmt.run(keyword, location, units, raw_text);
+  const { keyword, location, units, raw_text, delay } = req.body;
+  const delayMinutes = parseInt(delay, 10) || 0;
 
-    sse.broadcast('new_alarm', {
+  try {
+    const stmt = db.prepare('INSERT INTO alarms (keyword, location, units, raw_text, delay) VALUES (?, ?, ?, ?, ?)');
+    const info = stmt.run(keyword, location, units, raw_text, delayMinutes);
+
+    const alarmPayload = {
         id: info.lastInsertRowid,
         keyword,
         location,
         units,
         raw_text,
+        delay: delayMinutes,
         timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19)
-    });
+    };
 
-    res.status(201).json({ id: info.lastInsertRowid });
+    if (delayMinutes > 0) {
+        console.log(`Alarm scheduled. Delaying broadcast by ${delayMinutes} minutes.`);
+        setTimeout(() => {
+            sse.broadcast('new_alarm', alarmPayload);
+        }, delayMinutes * 60 * 1000);
+    } else {
+        sse.broadcast('new_alarm', alarmPayload);
+    }
+
+    res.status(201).json({ id: info.lastInsertRowid, scheduled: delayMinutes > 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -76,7 +88,13 @@ app.post('/api/alarms', verifyToken, (req, res) => {
 // Endpoint to get all alarms
 app.get('/api/alarms', verifyToken, (req, res) => {
   try {
-    const stmt = db.prepare('SELECT * FROM alarms ORDER BY timestamp DESC LIMIT 50');
+    // Only return alarms whose effective time (timestamp + delay) has passed
+    const stmt = db.prepare(`
+      SELECT * FROM alarms
+      WHERE datetime(timestamp, '+' || delay || ' minutes') <= datetime('now')
+      ORDER BY timestamp DESC
+      LIMIT 50
+    `);
     const alarms = stmt.all();
     res.json(alarms);
   } catch (err) {
@@ -128,6 +146,43 @@ app.post('/api/crew', verifyToken, (req, res) => {
     const stmt = db.prepare('INSERT INTO crew (name, role) VALUES (?, ?)');
     const info = stmt.run(name, role);
     res.status(201).json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoints for assignments
+app.get('/api/assignments', verifyToken, (req, res) => {
+  try {
+    const stmt = db.prepare(`
+      SELECT a.id, c.name as crew_name, c.role as crew_role, v.callsign as vehicle_callsign
+      FROM assignments a
+      JOIN crew c ON a.crew_id = c.id
+      JOIN vehicles v ON a.vehicle_id = v.id
+    `);
+    res.json(stmt.all());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/assignments', verifyToken, (req, res) => {
+  const { crew_id, vehicle_id } = req.body;
+  try {
+    const stmt = db.prepare('INSERT OR REPLACE INTO assignments (crew_id, vehicle_id) VALUES (?, ?)');
+    const info = stmt.run(crew_id, vehicle_id);
+    res.status(201).json({ id: info.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/assignments/:id', verifyToken, (req, res) => {
+  const { id } = req.params;
+  try {
+    const stmt = db.prepare('DELETE FROM assignments WHERE id = ?');
+    stmt.run(id);
+    res.sendStatus(204);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

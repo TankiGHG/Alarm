@@ -1,0 +1,6 @@
+
+> alarm-system@1.0.0 start
+> node server.js
+
+Server listening on port 3000
+IMAP configuration missing (IMAP_HOST). Skipping IMAP listener startup.

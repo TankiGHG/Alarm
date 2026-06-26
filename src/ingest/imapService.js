@@ -1,5 +1,6 @@
 const imaps = require('imap-simple');
 const db = require('../db/database');
+const sse = require('../sse');
 
 const config = {
     imap: {
@@ -39,7 +40,19 @@ function processMessage(messageText) {
     if (parsedData) {
         try {
             const stmt = db.prepare('INSERT INTO alarms (keyword, location, units, raw_text) VALUES (?, ?, ?, ?)');
-            stmt.run(parsedData.keyword, parsedData.location, parsedData.units, parsedData.raw_text);
+            const info = stmt.run(parsedData.keyword, parsedData.location, parsedData.units, parsedData.raw_text);
+
+            const alarmPayload = {
+                id: info.lastInsertRowid,
+                keyword: parsedData.keyword,
+                location: parsedData.location,
+                units: parsedData.units,
+                raw_text: parsedData.raw_text,
+                delay: 0,
+                timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19)
+            };
+
+            sse.broadcast('new_alarm', alarmPayload);
             console.log('Alarm successfully processed and saved:', parsedData.keyword);
         } catch (error) {
             console.error('Error saving alarm to database:', error);

@@ -6,62 +6,164 @@
     <title>Tactical Monitor</title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <div class="container">
-        <div class="monitor-header">
-            <div>
-                <h1>Tactical Monitor</h1>
-                <p style="color: var(--text-secondary)" id="statusText">Awaiting Dispatch</p>
+<body class="monitor-body">
+    <div class="monitor-layout">
+        <!-- Main Panel: Active Alarm -->
+        <main class="monitor-main">
+            <div class="monitor-top-bar">
+                <div id="statusIndicator" class="status-indicator inactive">AWAITING DISPATCH</div>
+                <div class="clocks-container">
+                    <div id="clock" class="realtime-clock">00:00:00</div>
+                    <div id="timer" class="tactical-timer">00:00</div>
+                </div>
             </div>
-            <div class="tactical-timer" id="timer">00:00</div>
-        </div>
 
-        <div id="alarmsContainer"></div>
+            <div id="activeAlarmContainer" class="active-alarm-container">
+                <div class="no-alarm-msg">No active incidents</div>
+            </div>
+        </main>
+
+        <!-- Sidebar: Assignments and History -->
+        <aside class="monitor-sidebar">
+            <div class="monitor-panel">
+                <h2 class="panel-title">Active Assignments</h2>
+                <div id="assignmentsGrid" class="assignments-grid">
+                    <!-- Assignments dynamically injected -->
+                </div>
+            </div>
+
+            <div class="monitor-panel" style="flex: 1; display: flex; flex-direction: column;">
+                <h2 class="panel-title">Recent Alarms</h2>
+                <div id="recentAlarmsList" class="recent-alarms-list">
+                    <!-- Recent alarms dynamically injected -->
+                </div>
+            </div>
+        </aside>
     </div>
 
     <script>
         let timerInterval;
+        let clockInterval;
         let activeAlarmTime = null;
 
         function pad(num) {
             return num.toString().padStart(2, '0');
         }
 
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText =
+                `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        }
+
         function updateTimer() {
             if (!activeAlarmTime) return;
             const now = new Date();
             let diff = Math.floor((now - activeAlarmTime) / 1000);
-
             if (diff < 0) diff = 0;
-
             const mins = Math.floor(diff / 60);
             const secs = diff % 60;
             document.getElementById('timer').innerText = `${pad(mins)}:${pad(secs)}`;
         }
 
-        function startTimer() {
-            activeAlarmTime = new Date();
+        function startTimer(timestamp) {
+            // Attempt to parse timestamp or use current time
+            activeAlarmTime = timestamp ? new Date(timestamp) : new Date();
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(updateTimer, 1000);
             updateTimer();
         }
 
-        function createAlarmElement(alarm, isActive = false) {
+        function stopTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            document.getElementById('timer').innerText = "00:00";
+            activeAlarmTime = null;
+        }
+
+        // Utility for escaping text to prevent XSS
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe.toString()
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        function renderActiveAlarm(alarm) {
+            const container = document.getElementById('activeAlarmContainer');
+            container.innerHTML = `
+                <div class="active-alarm-keyword">${escapeHtml(alarm.keyword)}</div>
+                <div class="active-alarm-location">${escapeHtml(alarm.location)}</div>
+                <div class="active-alarm-units"><strong>Units:</strong> ${escapeHtml(alarm.units)}</div>
+                <div class="active-alarm-raw">${escapeHtml(alarm.raw_text)}</div>
+            `;
+
+            const statusInd = document.getElementById('statusIndicator');
+            statusInd.innerText = "ACTIVE INCIDENT";
+            statusInd.classList.remove('inactive');
+            statusInd.classList.add('active');
+
+            startTimer(alarm.timestamp);
+        }
+
+        function createRecentAlarmElement(alarm) {
             const div = document.createElement('div');
-            div.className = `alarm-card ${isActive ? '' : 'inactive'}`;
+            div.className = 'recent-alarm-card';
             div.innerHTML = `
-                <div class="alarm-title">${alarm.keyword}</div>
-                <div class="alarm-details">
-                    <span><strong>Location:</strong> ${alarm.location}</span>
-                    <span><strong>Units:</strong> ${alarm.units}</span>
-                    <span><strong>Time:</strong> ${alarm.timestamp}</span>
-                </div>
-                <div class="alarm-raw">${alarm.raw_text}</div>
+                <div class="recent-keyword">${escapeHtml(alarm.keyword)}</div>
+                <div class="recent-location">${escapeHtml(alarm.location)}</div>
+                <div class="recent-time">${escapeHtml(alarm.timestamp)}</div>
             `;
             return div;
         }
 
-        async function loadInitialAlarms() {
+        async function loadAssignments() {
+            try {
+                const res = await fetch('/api/assignments');
+                if (res.ok) {
+                    const assignments = await res.json();
+                    const grid = document.getElementById('assignmentsGrid');
+                    grid.innerHTML = '';
+
+                    // Group by vehicle
+                    const vehicleMap = {};
+                    assignments.forEach(a => {
+                        if (!vehicleMap[a.vehicle_callsign]) {
+                            vehicleMap[a.vehicle_callsign] = [];
+                        }
+                        vehicleMap[a.vehicle_callsign].push(a);
+                    });
+
+                    for (const [vehicle, crew] of Object.entries(vehicleMap)) {
+                        const tile = document.createElement('div');
+                        tile.className = 'assignment-tile';
+
+                        const vTitle = document.createElement('div');
+                        vTitle.className = 'vehicle-title';
+                        vTitle.innerText = escapeHtml(vehicle);
+                        tile.appendChild(vTitle);
+
+                        crew.forEach(c => {
+                            const cRow = document.createElement('div');
+                            cRow.className = 'crew-row';
+                            cRow.innerText = `${escapeHtml(c.crew_role)}: ${escapeHtml(c.crew_name)}`;
+                            tile.appendChild(cRow);
+                        });
+
+                        grid.appendChild(tile);
+                    }
+                    if (Object.keys(vehicleMap).length === 0) {
+                        grid.innerHTML = '<div class="no-assignments">No active assignments</div>';
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load assignments", e);
+            }
+        }
+
+        async function loadInitialData() {
             try {
                 const res = await fetch('/api/alarms');
                 if (res.status === 401) {
@@ -70,41 +172,46 @@
                 }
                 const alarms = await res.json();
 
-                const container = document.getElementById('alarmsContainer');
-                alarms.forEach((alarm, index) => {
-                    const isActive = index === 0;
-                    container.appendChild(createAlarmElement(alarm, isActive));
-                });
+                const recentList = document.getElementById('recentAlarmsList');
+                recentList.innerHTML = '';
 
                 if (alarms.length > 0) {
-                    document.getElementById('statusText').innerText = "Active Incident";
-                    startTimer();
+                    // First alarm is active
+                    renderActiveAlarm(alarms[0]);
+
+                    // Rest are recent
+                    for (let i = 1; i < alarms.length; i++) {
+                        recentList.appendChild(createRecentAlarmElement(alarms[i]));
+                    }
                 } else {
-                    document.getElementById('alarmsContainer').innerHTML = "<div class='alarm-card inactive'>No alarms found</div>";
+                    document.getElementById('activeAlarmContainer').innerHTML = '<div class="no-alarm-msg">No active incidents</div>';
+                    stopTimer();
                 }
+
+                await loadAssignments();
             } catch (err) {
-                console.error("Failed to load alarms", err);
+                console.error("Failed to load initial data", err);
             }
         }
 
         function initSSE() {
             const evtSource = new EventSource('/api/stream');
             evtSource.addEventListener('new_alarm', (e) => {
-                const alarm = JSON.parse(e.data);
-                const container = document.getElementById('alarmsContainer');
+                const newAlarm = JSON.parse(e.data);
 
-                // Clear the dummy "No alarms found" message if needed
-                if (container.innerText === 'No alarms found') {
-                    container.innerHTML = '';
+                // Move current active to recent list
+                const keywordEl = document.querySelector('.active-alarm-keyword');
+                if (keywordEl) {
+                    const currentActive = {
+                        keyword: keywordEl.innerText,
+                        location: document.querySelector('.active-alarm-location').innerText,
+                        timestamp: new Date().toISOString() // approximation for list
+                    };
+                    const recentList = document.getElementById('recentAlarmsList');
+                    recentList.prepend(createRecentAlarmElement(currentActive));
                 }
 
-                const activeCards = container.querySelectorAll('.alarm-card:not(.inactive)');
-                activeCards.forEach(c => c.classList.add('inactive'));
-
-                container.prepend(createAlarmElement(alarm, true));
-                document.getElementById('statusText').innerText = "Active Incident";
-
-                startTimer();
+                renderActiveAlarm(newAlarm);
             });
 
             evtSource.onerror = (err) => {
@@ -112,10 +219,13 @@
             };
         }
 
-        // Wait a small bit so body is definitely fully parsed
         window.addEventListener('DOMContentLoaded', () => {
-            loadInitialAlarms();
+            clockInterval = setInterval(updateClock, 1000);
+            updateClock();
+            loadInitialData();
             initSSE();
+            // Refresh assignments periodically
+            setInterval(loadAssignments, 30000);
         });
     </script>
 </body>

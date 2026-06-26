@@ -25,6 +25,7 @@
                     <input type="text" id="a_location" placeholder="Location" required>
                     <input type="text" id="a_units" placeholder="Units (comma separated)" required>
                     <input type="text" id="a_raw" placeholder="Raw Description" required>
+                    <input type="number" id="a_delay" placeholder="Delay in minutes (0 for immediate)" min="0" value="0" required style="width: 100%; padding: 0.5rem 0.75rem; margin-bottom: 1rem; border-radius: 4px; background-color: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-primary);">
                     <button type="submit">Dispatch Alarm</button>
                 </form>
             </div>
@@ -54,10 +55,28 @@
                 </form>
                 <ul id="crewList"></ul>
             </div>
+
+            <!-- Manage Assignments -->
+            <div class="panel">
+                <h2>Crew-Vehicle Assignments</h2>
+                <form id="assignmentForm" style="display:flex; gap: 0.5rem; margin-bottom: 1rem;">
+                    <select id="a_crew_id" required style="flex: 1; padding: 0.5rem; border-radius: 4px; background: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color);">
+                        <option value="">Select Crew...</option>
+                    </select>
+                    <select id="a_vehicle_id" required style="flex: 1; padding: 0.5rem; border-radius: 4px; background: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color);">
+                        <option value="">Select Vehicle...</option>
+                    </select>
+                    <button type="submit">Assign</button>
+                </form>
+                <ul id="assignmentList"></ul>
+            </div>
         </div>
     </div>
 
     <script>
+        let vehiclesData = [];
+        let crewData = [];
+
         async function fetchAPI(url, options = {}) {
             const res = await fetch(url, options);
             if (res.status === 401) window.location.href = '/login.html';
@@ -66,28 +85,74 @@
 
         async function loadVehicles() {
             const res = await fetchAPI('/api/vehicles');
-            const data = await res.json();
+            vehiclesData = await res.json();
             const list = document.getElementById('vehicleList');
+            const select = document.getElementById('a_vehicle_id');
             list.innerHTML = '';
-            data.forEach(v => {
+            select.innerHTML = '<option value="">Select Vehicle...</option>';
+            vehiclesData.forEach(v => {
                 const li = document.createElement('li');
                 li.className = 'list-item';
-                li.innerText = v.callsign;
+                li.innerText = escapeHtml(v.callsign);
                 list.appendChild(li);
+
+                const opt = document.createElement('option');
+                opt.value = v.id;
+                opt.innerText = escapeHtml(v.callsign);
+                select.appendChild(opt);
             });
         }
 
         async function loadCrew() {
             const res = await fetchAPI('/api/crew');
-            const data = await res.json();
+            crewData = await res.json();
             const list = document.getElementById('crewList');
+            const select = document.getElementById('a_crew_id');
             list.innerHTML = '';
-            data.forEach(c => {
+            select.innerHTML = '<option value="">Select Crew...</option>';
+            crewData.forEach(c => {
                 const li = document.createElement('li');
                 li.className = 'list-item';
-                li.innerText = `${c.name} (${c.role})`;
+                li.innerText = `${escapeHtml(c.name)} (${escapeHtml(c.role)})`;
+                list.appendChild(li);
+
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.innerText = `${escapeHtml(c.name)} (${escapeHtml(c.role)})`;
+                select.appendChild(opt);
+            });
+        }
+
+        // Utility for escaping HTML to prevent XSS
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe.toString()
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        async function loadAssignments() {
+            const res = await fetchAPI('/api/assignments');
+            const data = await res.json();
+            const list = document.getElementById('assignmentList');
+            list.innerHTML = '';
+            data.forEach(a => {
+                const li = document.createElement('li');
+                li.className = 'list-item';
+                li.style.display = 'flex';
+                li.style.justifyContent = 'space-between';
+                li.innerHTML = `<span><strong>${escapeHtml(a.crew_name)}</strong> (${escapeHtml(a.crew_role)}) &rarr; <strong>${escapeHtml(a.vehicle_callsign)}</strong></span>
+                                <button class="danger" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;" onclick="deleteAssignment(${a.id})">Remove</button>`;
                 list.appendChild(li);
             });
+        }
+
+        async function deleteAssignment(id) {
+            await fetchAPI(`/api/assignments/${id}`, { method: 'DELETE' });
+            loadAssignments();
         }
 
         document.getElementById('vehicleForm').addEventListener('submit', async (e) => {
@@ -115,21 +180,45 @@
             loadCrew();
         });
 
+        document.getElementById('assignmentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const crew_id = document.getElementById('a_crew_id').value;
+            const vehicle_id = document.getElementById('a_vehicle_id').value;
+            await fetchAPI('/api/assignments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ crew_id, vehicle_id })
+            });
+            document.getElementById('assignmentForm').reset();
+            loadAssignments();
+        });
+
         document.getElementById('alarmForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const keyword = document.getElementById('a_keyword').value;
             const location = document.getElementById('a_location').value;
             const units = document.getElementById('a_units').value;
             const raw_text = document.getElementById('a_raw').value;
+            const delay = document.getElementById('a_delay').value;
 
-            await fetchAPI('/api/alarms', {
+            const res = await fetchAPI('/api/alarms', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ keyword, location, units, raw_text })
+                body: JSON.stringify({ keyword, location, units, raw_text, delay })
             });
 
             document.getElementById('alarmForm').reset();
-            alert('Alarm dispatched!');
+
+            if (res.ok) {
+                const data = await res.json();
+                if (data.scheduled) {
+                    alert(`Alarm scheduled to dispatch in ${delay} minutes.`);
+                } else {
+                    alert('Alarm dispatched immediately!');
+                }
+            } else {
+                alert('Failed to dispatch alarm');
+            }
         });
 
         document.getElementById('logoutBtn').addEventListener('click', async () => {
@@ -139,6 +228,7 @@
 
         loadVehicles();
         loadCrew();
+        loadAssignments();
     </script>
 </body>
 </html>
