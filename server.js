@@ -102,6 +102,24 @@ app.get('/api/alarms', verifyToken, (req, res) => {
   }
 });
 
+// Endpoint to end the active alarm
+app.post('/api/alarms/:id/end', verifyToken, (req, res) => {
+  const { id } = req.params;
+  try {
+    const stmt = db.prepare("UPDATE alarms SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL");
+    const info = stmt.run(id);
+
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Alarm not found or already ended' });
+    }
+
+    sse.broadcast('alarm_ended', { id: parseInt(id, 10) });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 

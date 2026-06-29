@@ -95,22 +95,46 @@
             setTimeout(() => { map.invalidateSize(); }, 500);
         }
 
-        async function updateMapLocation(locationString) {
-            if (!map) return;
-            try {
-                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationString)}`);
-                const data = await res.json();
-                if (data && data.length > 0) {
-                    const lat = parseFloat(data[0].lat);
-                    const lon = parseFloat(data[0].lon);
+        async function geocode(query) {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
+            if (!res.ok) {
+                console.error(`Geocoding request failed for "${query}": HTTP ${res.status}`);
+                return null;
+            }
+            const data = await res.json();
+            return (data && data.length > 0) ? data[0] : null;
+        }
 
-                    if (marker) {
-                        marker.setLatLng([lat, lon]);
-                    } else {
-                        marker = L.marker([lat, lon]).addTo(map);
+        async function updateMapLocation(locationString) {
+            if (!map || !locationString) return;
+            try {
+                let result = await geocode(locationString);
+
+                // Fallback: full address (street + house number) often fails on Nominatim.
+                // Retry with just the last two comma-separated parts (typically "PLZ Stadt").
+                if (!result) {
+                    const parts = locationString.split(',').map(p => p.trim()).filter(Boolean);
+                    if (parts.length > 1) {
+                        const fallbackQuery = parts.slice(-2).join(', ');
+                        console.warn(`No geocoding result for "${locationString}", retrying with "${fallbackQuery}"`);
+                        result = await geocode(fallbackQuery);
                     }
-                    map.setView([lat, lon], 15);
                 }
+
+                if (!result) {
+                    console.warn(`Could not geocode location: "${locationString}"`);
+                    return;
+                }
+
+                const lat = parseFloat(result.lat);
+                const lon = parseFloat(result.lon);
+
+                if (marker) {
+                    marker.setLatLng([lat, lon]);
+                } else {
+                    marker = L.marker([lat, lon]).addTo(map);
+                }
+                map.setView([lat, lon], 15);
             } catch (err) {
                 console.error("Geocoding failed", err);
             }
@@ -179,7 +203,11 @@
                  .replace(/'/g, "&#039;");
         }
 
+        let currentAlarm = null;
+
         function renderActiveAlarm(alarm) {
+            currentAlarm = alarm;
+
             const container = document.getElementById('activeAlarmContainer');
             container.innerHTML = `
                 <div class="active-alarm-keyword">${escapeHtml(alarm.keyword)}</div>
@@ -198,6 +226,18 @@
             if (alarm.location && map) {
                 updateMapLocation(alarm.location);
             }
+        }
+
+        function renderNoActiveAlarm() {
+            currentAlarm = null;
+            document.getElementById('activeAlarmContainer').innerHTML = '<div class="no-alarm-msg">Kein aktiver Einsatz</div>';
+
+            const statusInd = document.getElementById('statusIndicator');
+            statusInd.innerText = "AWAITING DISPATCH";
+            statusInd.classList.remove('active');
+            statusInd.classList.add('inactive');
+
+            stopTimer();
         }
 
         function createRecentAlarmElement(alarm) {
@@ -266,16 +306,17 @@
                 const recentList = document.getElementById('recentAlarmsList');
                 recentList.innerHTML = '';
 
-                if (alarms.length > 0) {
-                    renderActiveAlarm(alarms[0]);
+                const active = alarms.find(a => !a.ended_at);
 
-                    for (let i = 1; i < alarms.length; i++) {
-                        recentList.appendChild(createRecentAlarmElement(alarms[i]));
-                    }
+                if (active) {
+                    renderActiveAlarm(active);
                 } else {
-                    document.getElementById('activeAlarmContainer').innerHTML = '<div class="no-alarm-msg">Kein aktiver Einsatz</div>';
-                    stopTimer();
+                    renderNoActiveAlarm();
                 }
+
+                alarms.filter(a => a.id !== (active && active.id)).forEach(a => {
+                    recentList.appendChild(createRecentAlarmElement(a));
+                });
 
                 await loadAssignments();
             } catch (err) {
@@ -300,6 +341,15 @@
                 }
 
                 renderActiveAlarm(newAlarm);
+            });
+
+            evtSource.addEventListener('alarm_ended', (e) => {
+                const data = JSON.parse(e.data);
+                if (currentAlarm && currentAlarm.id === data.id) {
+                    const recentList = document.getElementById('recentAlarmsList');
+                    recentList.prepend(createRecentAlarmElement(currentAlarm));
+                    renderNoActiveAlarm();
+                }
             });
 
             evtSource.onerror = (err) => {

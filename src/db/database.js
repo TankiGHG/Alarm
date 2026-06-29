@@ -21,7 +21,8 @@ db.exec(`
     units TEXT,
     raw_text TEXT,
     delay INTEGER DEFAULT 0,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME DEFAULT NULL
   );
 
   CREATE TABLE IF NOT EXISTS vehicles (
@@ -44,5 +45,12 @@ db.exec(`
     UNIQUE(crew_id)
   );
 `);
+
+// Migration for databases created before the ended_at column existed
+try {
+  db.exec('ALTER TABLE alarms ADD COLUMN ended_at DATETIME DEFAULT NULL');
+} catch (err) {
+  // Column already exists, ignore
+}
 
 module.exports = db;

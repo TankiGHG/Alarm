@@ -28,6 +28,10 @@
                     <input type="number" id="a_delay" placeholder="Delay in minutes (0 for immediate)" min="0" value="0" required style="width: 100%; padding: 0.5rem 0.75rem; margin-bottom: 1rem; border-radius: 4px; background-color: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-primary);">
                     <button type="submit">Dispatch Alarm</button>
                 </form>
+                <div id="activeAlarmBanner" style="display:none; margin-top: 1rem; padding: 0.75rem; border-radius: 4px; background-color: var(--accent-red); color: #fff;">
+                    <span id="activeAlarmText"></span>
+                    <button id="endAlarmBtn" class="danger" style="margin-left: 1rem;">Einsatz beenden</button>
+                </div>
             </div>
 
             <!-- Manage Vehicles -->
@@ -216,9 +220,34 @@
                 } else {
                     alert('Alarm dispatched immediately!');
                 }
+                loadActiveAlarm();
             } else {
                 alert('Failed to dispatch alarm');
             }
+        });
+
+        let activeAlarmId = null;
+
+        async function loadActiveAlarm() {
+            const res = await fetchAPI('/api/alarms');
+            const alarms = await res.json();
+            const active = alarms.find(a => !a.ended_at);
+
+            const banner = document.getElementById('activeAlarmBanner');
+            if (active) {
+                activeAlarmId = active.id;
+                document.getElementById('activeAlarmText').innerText = `Aktiver Einsatz: ${active.keyword} (${active.location})`;
+                banner.style.display = 'block';
+            } else {
+                activeAlarmId = null;
+                banner.style.display = 'none';
+            }
+        }
+
+        document.getElementById('endAlarmBtn').addEventListener('click', async () => {
+            if (!activeAlarmId) return;
+            await fetchAPI(`/api/alarms/${activeAlarmId}/end`, { method: 'POST' });
+            loadActiveAlarm();
         });
 
         document.getElementById('logoutBtn').addEventListener('click', async () => {
@@ -229,6 +258,7 @@
         loadVehicles();
         loadCrew();
         loadAssignments();
+        loadActiveAlarm();
     </script>
 </body>
 </html>
