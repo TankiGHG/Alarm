@@ -24,7 +24,7 @@ Die Anwendung bringt ein vollständiges `docker-compose.yml` mit. Die SQLite-Dat
    ```bash
    docker-compose up -d --build
    ```
-4. Die Applikation ist unter `http://localhost:3000` erreichbar.
+4. Die Applikation ist unter `http://localhost:3002` erreichbar.
 
 ### Lokale Entwicklung
 1. Abhängigkeiten installieren:
