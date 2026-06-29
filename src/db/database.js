@@ -1,8 +1,11 @@
 const Database = require('better-sqlite3');
+const fs = require('fs');
 const path = require('path');
 
 // Initialize SQLite Database
-const dbPath = path.join(__dirname, '../../data', 'alarms.sqlite');
+const dataDir = path.join(__dirname, '../../data');
+fs.mkdirSync(dataDir, { recursive: true });
+const dbPath = path.join(dataDir, 'alarms.sqlite');
 const db = new Database(dbPath);
 
 // Crucial: Set WAL mode and synchronous pragmas
