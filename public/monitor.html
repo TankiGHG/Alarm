@@ -16,8 +16,14 @@
     <div class="monitor-grid-container">
         <!-- Header -->
         <header class="monitor-header">
+            <div class="header-brand">
+                <div class="brand-emblem"></div>
+                <div class="brand-text">
+                    <div class="brand-title">Feuerwehr Lengfeld</div>
+                    <div class="brand-subtitle">Würzburg &middot; Einsatzleitsystem</div>
+                </div>
+            </div>
             <div id="statusIndicator" class="status-indicator inactive">AWAITING DISPATCH</div>
-            <div class="header-title">Einsatzmonitor</div>
             <div class="clocks-container">
                 <div class="clock-label">Zeit:</div>
                 <div id="clock" class="realtime-clock">00:00:00</div>
@@ -215,12 +221,27 @@
 
         let currentAlarm = null;
 
+        const KEYWORD_ICONS = [
+            { match: /ölspur/i, icon: '🛢️' },
+            { match: /brand/i, icon: '🔥' },
+            { match: /rauch/i, icon: '💨' },
+            { match: /person.*such|verm/i, icon: '🔍' },
+            { match: /eingeklemmt/i, icon: '⚠️' },
+            { match: /baum|ast/i, icon: '🌳' },
+            { match: /hvo/i, icon: '🚑' }
+        ];
+
+        function iconForKeyword(keyword) {
+            const found = KEYWORD_ICONS.find(k => k.match.test(keyword || ''));
+            return found ? found.icon : '🚨';
+        }
+
         function renderActiveAlarm(alarm) {
             currentAlarm = alarm;
 
             const container = document.getElementById('activeAlarmContainer');
             container.innerHTML = `
-                <div class="active-alarm-keyword">${escapeHtml(alarm.keyword)}</div>
+                <div class="active-alarm-keyword">${iconForKeyword(alarm.keyword)} ${escapeHtml(alarm.keyword)}</div>
                 <div class="active-alarm-location">${escapeHtml(alarm.location)}</div>
                 <div class="active-alarm-units"><strong>Fahrzeuge:</strong> ${escapeHtml(alarm.units)}</div>
                 <div class="active-alarm-raw">${escapeHtml(alarm.raw_text)}</div>
@@ -254,49 +275,88 @@
             const div = document.createElement('div');
             div.className = 'recent-alarm-card';
             div.innerHTML = `
-                <div class="recent-keyword">${escapeHtml(alarm.keyword)}</div>
+                <div class="recent-keyword">${iconForKeyword(alarm.keyword)} ${escapeHtml(alarm.keyword)}</div>
                 <div class="recent-location">${escapeHtml(alarm.location)}</div>
                 <div class="recent-time">${escapeHtml(alarm.timestamp)}</div>
             `;
             return div;
         }
 
+        const FMS_META = {
+            '1': { label: 'Status 1', color: '#2ea043' },
+            '2': { label: 'Status 2', color: '#1f6feb' },
+            '3': { label: 'Status 3', color: '#d29922' },
+            '4': { label: 'Status 4', color: '#d00' },
+            '5': { label: 'Status 5', color: '#a371f7' },
+            '6': { label: 'Status 6', color: '#555' }
+        };
+
         async function loadAssignments() {
             try {
-                const res = await fetch('/api/assignments');
-                if (res.ok) {
-                    const assignments = await res.json();
+                const [vehiclesRes, assignmentsRes] = await Promise.all([
+                    fetch('/api/vehicles'),
+                    fetch('/api/assignments')
+                ]);
+                if (vehiclesRes.ok && assignmentsRes.ok) {
+                    const vehicles = await vehiclesRes.json();
+                    const assignments = await assignmentsRes.json();
                     const grid = document.getElementById('assignmentsGrid');
                     grid.innerHTML = '';
 
-                    const vehicleMap = {};
+                    const crewByVehicle = {};
                     assignments.forEach(a => {
-                        if (!vehicleMap[a.vehicle_callsign]) {
-                            vehicleMap[a.vehicle_callsign] = [];
-                        }
-                        vehicleMap[a.vehicle_callsign].push(a);
+                        if (!crewByVehicle[a.vehicle_id]) crewByVehicle[a.vehicle_id] = [];
+                        crewByVehicle[a.vehicle_id].push(a);
                     });
 
-                    for (const [vehicle, crew] of Object.entries(vehicleMap)) {
+                    vehicles.forEach(v => {
                         const tile = document.createElement('div');
                         tile.className = 'assignment-tile';
+                        const meta = FMS_META[String(v.fms_status || '2')] || FMS_META['2'];
+                        tile.style.borderLeftColor = meta.color;
+
+                        const header = document.createElement('div');
+                        header.style.display = 'flex';
+                        header.style.justifyContent = 'space-between';
+                        header.style.alignItems = 'center';
 
                         const vTitle = document.createElement('div');
                         vTitle.className = 'vehicle-title';
-                        vTitle.innerText = escapeHtml(vehicle);
-                        tile.appendChild(vTitle);
+                        vTitle.innerText = escapeHtml(v.callsign);
+                        header.appendChild(vTitle);
 
-                        crew.forEach(c => {
+                        const badge = document.createElement('span');
+                        badge.innerText = meta.label;
+                        badge.style.backgroundColor = meta.color;
+                        badge.style.color = '#fff';
+                        badge.style.fontSize = '0.75rem';
+                        badge.style.fontWeight = 'bold';
+                        badge.style.padding = '2px 8px';
+                        badge.style.borderRadius = '3px';
+                        header.appendChild(badge);
+
+                        tile.appendChild(header);
+
+                        const crew = crewByVehicle[v.id] || [];
+                        if (crew.length === 0) {
                             const cRow = document.createElement('div');
                             cRow.className = 'crew-row';
-                            cRow.innerText = `${escapeHtml(c.crew_role)}: ${escapeHtml(c.crew_name)}`;
+                            cRow.innerText = 'Keine Besatzung zugewiesen';
                             tile.appendChild(cRow);
-                        });
+                        } else {
+                            crew.forEach(c => {
+                                const cRow = document.createElement('div');
+                                cRow.className = 'crew-row';
+                                cRow.innerText = `${escapeHtml(c.crew_role)}: ${escapeHtml(c.crew_name)}`;
+                                tile.appendChild(cRow);
+                            });
+                        }
 
                         grid.appendChild(tile);
-                    }
-                    if (Object.keys(vehicleMap).length === 0) {
-                        grid.innerHTML = '<div class="no-assignments">Keine aktiven Fahrzeuge</div>';
+                    });
+
+                    if (vehicles.length === 0) {
+                        grid.innerHTML = '<div class="no-assignments">Keine Fahrzeuge angelegt</div>';
                     }
                 }
             } catch (e) {
@@ -388,6 +448,14 @@
                 renderActiveAlarm(newAlarm);
                 playGong();
                 announceAlarm(newAlarm);
+
+                const gridEl = document.querySelector('.monitor-grid-container');
+                if (gridEl) {
+                    gridEl.classList.remove('alarm-flash');
+                    void gridEl.offsetWidth;
+                    gridEl.classList.add('alarm-flash');
+                    setTimeout(() => gridEl.classList.remove('alarm-flash'), 5000);
+                }
             });
 
             evtSource.addEventListener('alarm_ended', (e) => {
@@ -397,6 +465,10 @@
                     recentList.prepend(createRecentAlarmElement(currentAlarm));
                     renderNoActiveAlarm();
                 }
+            });
+
+            evtSource.addEventListener('vehicle_status', () => {
+                loadAssignments();
             });
 
             evtSource.onerror = (err) => {

@@ -103,6 +103,15 @@
             return res;
         }
 
+        const FMS_LABELS = {
+            '1': 'Status 1 – Einsatzbereit über Funk',
+            '2': 'Status 2 – Einsatzbereit auf Wache',
+            '3': 'Status 3 – Einsatzauftrag übernommen',
+            '4': 'Status 4 – Am Einsatzort',
+            '5': 'Status 5 – Sprechwunsch',
+            '6': 'Status 6 – Nicht einsatzbereit'
+        };
+
         async function loadVehicles() {
             const res = await fetchAPI('/api/vehicles');
             vehiclesData = await res.json();
@@ -113,7 +122,37 @@
             vehiclesData.forEach(v => {
                 const li = document.createElement('li');
                 li.className = 'list-item';
-                li.innerText = escapeHtml(v.callsign);
+                li.style.display = 'flex';
+                li.style.justifyContent = 'space-between';
+                li.style.alignItems = 'center';
+                li.style.gap = '0.5rem';
+
+                const span = document.createElement('span');
+                span.innerText = escapeHtml(v.callsign);
+                li.appendChild(span);
+
+                const statusSelect = document.createElement('select');
+                statusSelect.style.padding = '0.3rem';
+                statusSelect.style.borderRadius = '4px';
+                statusSelect.style.background = 'var(--bg-color)';
+                statusSelect.style.color = 'var(--text-primary)';
+                statusSelect.style.border = '1px solid var(--border-color)';
+                Object.entries(FMS_LABELS).forEach(([code, label]) => {
+                    const opt = document.createElement('option');
+                    opt.value = code;
+                    opt.innerText = label;
+                    if (code === String(v.fms_status || '2')) opt.selected = true;
+                    statusSelect.appendChild(opt);
+                });
+                statusSelect.addEventListener('change', async () => {
+                    await fetchAPI(`/api/vehicles/${v.id}/status`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fms_status: statusSelect.value })
+                    });
+                });
+                li.appendChild(statusSelect);
+
                 list.appendChild(li);
 
                 const opt = document.createElement('option');

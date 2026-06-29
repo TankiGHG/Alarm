@@ -148,6 +148,24 @@ app.post('/api/vehicles', verifyToken, (req, res) => {
   }
 });
 
+const VALID_FMS_STATUS = ['1', '2', '3', '4', '5', '6'];
+
+app.patch('/api/vehicles/:id/status', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const { fms_status } = req.body;
+  if (!VALID_FMS_STATUS.includes(fms_status)) {
+    return res.status(400).json({ error: 'Invalid FMS status' });
+  }
+  try {
+    const stmt = db.prepare('UPDATE vehicles SET fms_status = ? WHERE id = ?');
+    stmt.run(fms_status, id);
+    sse.broadcast('vehicle_status', { id: parseInt(id, 10), fms_status });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Endpoints for crew
 app.get('/api/crew', verifyToken, (req, res) => {
   try {
@@ -184,7 +202,7 @@ app.delete('/api/crew/:id', verifyToken, (req, res) => {
 app.get('/api/assignments', verifyToken, (req, res) => {
   try {
     const stmt = db.prepare(`
-      SELECT a.id, c.name as crew_name, c.role as crew_role, v.callsign as vehicle_callsign
+      SELECT a.id, c.name as crew_name, c.role as crew_role, v.id as vehicle_id, v.callsign as vehicle_callsign, v.fms_status as vehicle_fms_status
       FROM assignments a
       JOIN crew c ON a.crew_id = c.id
       JOIN vehicles v ON a.vehicle_id = v.id

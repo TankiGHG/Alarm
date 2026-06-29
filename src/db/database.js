@@ -27,7 +27,8 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS vehicles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    callsign TEXT UNIQUE
+    callsign TEXT UNIQUE,
+    fms_status TEXT DEFAULT '2'
   );
 
   CREATE TABLE IF NOT EXISTS crew (
@@ -49,6 +50,12 @@ db.exec(`
 // Migration for databases created before the ended_at column existed
 try {
   db.exec('ALTER TABLE alarms ADD COLUMN ended_at DATETIME DEFAULT NULL');
+} catch (err) {
+  // Column already exists, ignore
+}
+
+try {
+  db.exec("ALTER TABLE vehicles ADD COLUMN fms_status TEXT DEFAULT '2'");
 } catch (err) {
   // Column already exists, ignore
 }
