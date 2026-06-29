@@ -169,6 +169,17 @@ app.post('/api/crew', verifyToken, (req, res) => {
   }
 });
 
+app.delete('/api/crew/:id', verifyToken, (req, res) => {
+  const { id } = req.params;
+  try {
+    db.prepare('DELETE FROM assignments WHERE crew_id = ?').run(id);
+    db.prepare('DELETE FROM crew WHERE id = ?').run(id);
+    res.sendStatus(204);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Endpoints for assignments
 app.get('/api/assignments', verifyToken, (req, res) => {
   try {

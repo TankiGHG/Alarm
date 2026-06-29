@@ -21,6 +21,17 @@
             <div class="panel">
                 <h2>Manual Alarm Trigger</h2>
                 <form id="alarmForm">
+                    <select id="a_keyword_preset" style="width: 100%; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; border-radius: 4px; background-color: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-primary);">
+                        <option value="">Einsatzstichwort vorauswählen...</option>
+                        <option value="Ölspur">Ölspur</option>
+                        <option value="HVO-Einsatz">HVO-Einsatz</option>
+                        <option value="Personensuche">Personensuche</option>
+                        <option value="Brand Container am Schützenhaus">Brand Container am Schützenhaus</option>
+                        <option value="Unklare Rauchentwicklung">Unklare Rauchentwicklung</option>
+                        <option value="Brand Mülleimer">Brand Mülleimer</option>
+                        <option value="Person unter irgendwas eingeklemmt">Person unter irgendwas eingeklemmt</option>
+                        <option value="Evtl. Baum/Ast auf Straße">Evtl. Baum/Ast auf Straße</option>
+                    </select>
                     <input type="text" id="a_keyword" placeholder="Keyword (e.g. Brand B3)" required>
                     <input type="text" id="a_location" placeholder="Location" required>
                     <input type="text" id="a_units" placeholder="Units (comma separated)" required>
@@ -50,10 +61,15 @@
                 <form id="crewForm" style="display:flex; gap: 0.5rem; margin-bottom: 1rem;">
                     <input type="text" id="c_name" placeholder="Name" required style="margin-bottom:0">
                     <select id="c_role" style="padding: 0.5rem; border-radius: 4px; background: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color);">
-                        <option value="Gruppenführer">Gruppenführer</option>
+                        <option value="Gruppenführer">Gruppenführer (Führer)</option>
                         <option value="Maschinist">Maschinist</option>
-                        <option value="Angriffstrupp">Angriffstrupp</option>
-                        <option value="Wassertrupp">Wassertrupp</option>
+                        <option value="Angriffstruppführer">Angriffstruppführer (Führer)</option>
+                        <option value="Angriffstruppmann">Angriffstruppmann (Mann)</option>
+                        <option value="Wassertruppführer">Wassertruppführer (Führer)</option>
+                        <option value="Wassertruppmann">Wassertruppmann (Mann)</option>
+                        <option value="Schlauchtruppführer">Schlauchtruppführer (Führer)</option>
+                        <option value="Schlauchtruppmann">Schlauchtruppmann (Mann)</option>
+                        <option value="Melder">Melder</option>
                     </select>
                     <button type="submit">Add</button>
                 </form>
@@ -117,7 +133,10 @@
             crewData.forEach(c => {
                 const li = document.createElement('li');
                 li.className = 'list-item';
-                li.innerText = `${escapeHtml(c.name)} (${escapeHtml(c.role)})`;
+                li.style.display = 'flex';
+                li.style.justifyContent = 'space-between';
+                li.innerHTML = `<span>${escapeHtml(c.name)} (${escapeHtml(c.role)})</span>
+                                <button class="danger" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;" onclick="deleteCrew(${c.id})">Remove</button>`;
                 list.appendChild(li);
 
                 const opt = document.createElement('option');
@@ -125,6 +144,12 @@
                 opt.innerText = `${escapeHtml(c.name)} (${escapeHtml(c.role)})`;
                 select.appendChild(opt);
             });
+        }
+
+        async function deleteCrew(id) {
+            await fetchAPI(`/api/crew/${id}`, { method: 'DELETE' });
+            loadCrew();
+            loadAssignments();
         }
 
         // Utility for escaping HTML to prevent XSS
@@ -195,6 +220,12 @@
             });
             document.getElementById('assignmentForm').reset();
             loadAssignments();
+        });
+
+        document.getElementById('a_keyword_preset').addEventListener('change', (e) => {
+            if (e.target.value) {
+                document.getElementById('a_keyword').value = e.target.value;
+            }
         });
 
         document.getElementById('alarmForm').addEventListener('submit', async (e) => {
