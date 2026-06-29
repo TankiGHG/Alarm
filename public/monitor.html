@@ -195,7 +195,7 @@
 
             startTimer(alarm.timestamp);
 
-            if (alarm.location) {
+            if (alarm.location && map) {
                 updateMapLocation(alarm.location);
             }
         }
@@ -310,7 +310,7 @@
         window.addEventListener('DOMContentLoaded', () => {
             clockInterval = setInterval(updateClock, 1000);
             updateClock();
-            initMap();
+            try { initMap(); } catch (e) { console.error('Map init failed', e); }
             fetchWeather();
             loadInitialData();
             initSSE();
