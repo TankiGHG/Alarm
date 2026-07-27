@@ -102,6 +102,24 @@ app.get('/api/alarms', verifyToken, (req, res) => {
   }
 });
 
+// Endpoint to end the active alarm
+app.post('/api/alarms/:id/end', verifyToken, (req, res) => {
+  const { id } = req.params;
+  try {
+    const stmt = db.prepare("UPDATE alarms SET ended_at = datetime('now') WHERE id = ? AND ended_at IS NULL");
+    const info = stmt.run(id);
+
+    if (info.changes === 0) {
+      return res.status(404).json({ error: 'Alarm not found or already ended' });
+    }
+
+    sse.broadcast('alarm_ended', { id: parseInt(id, 10) });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 
@@ -130,6 +148,24 @@ app.post('/api/vehicles', verifyToken, (req, res) => {
   }
 });
 
+const VALID_FMS_STATUS = ['1', '2', '3', '4', '5', '6'];
+
+app.patch('/api/vehicles/:id/status', verifyToken, (req, res) => {
+  const { id } = req.params;
+  const { fms_status } = req.body;
+  if (!VALID_FMS_STATUS.includes(fms_status)) {
+    return res.status(400).json({ error: 'Invalid FMS status' });
+  }
+  try {
+    const stmt = db.prepare('UPDATE vehicles SET fms_status = ? WHERE id = ?');
+    stmt.run(fms_status, id);
+    sse.broadcast('vehicle_status', { id: parseInt(id, 10), fms_status });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Endpoints for crew
 app.get('/api/crew', verifyToken, (req, res) => {
   try {
@@ -151,11 +187,22 @@ app.post('/api/crew', verifyToken, (req, res) => {
   }
 });
 
+app.delete('/api/crew/:id', verifyToken, (req, res) => {
+  const { id } = req.params;
+  try {
+    db.prepare('DELETE FROM assignments WHERE crew_id = ?').run(id);
+    db.prepare('DELETE FROM crew WHERE id = ?').run(id);
+    res.sendStatus(204);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Endpoints for assignments
 app.get('/api/assignments', verifyToken, (req, res) => {
   try {
     const stmt = db.prepare(`
-      SELECT a.id, c.name as crew_name, c.role as crew_role, v.callsign as vehicle_callsign
+      SELECT a.id, c.name as crew_name, c.role as crew_role, v.id as vehicle_id, v.callsign as vehicle_callsign, v.fms_status as vehicle_fms_status
       FROM assignments a
       JOIN crew c ON a.crew_id = c.id
       JOIN vehicles v ON a.vehicle_id = v.id

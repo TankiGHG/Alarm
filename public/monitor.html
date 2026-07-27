@@ -9,11 +9,21 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="monitor-body dark-theme">
+    <div id="soundUnlockOverlay" style="position:fixed; inset:0; background:rgba(0,0,0,0.85); color:#fff; display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:9999; cursor:pointer; text-align:center;">
+        <div style="font-size:1.5rem; margin-bottom:1rem;">Klicken, um Ton zu aktivieren</div>
+        <div style="font-size:0.9rem; opacity:0.7;">(Gong &amp; Sprachansage bei neuem Einsatz)</div>
+    </div>
     <div class="monitor-grid-container">
         <!-- Header -->
         <header class="monitor-header">
+            <div class="header-brand">
+                <div class="brand-emblem"></div>
+                <div class="brand-text">
+                    <div class="brand-title">Feuerwehr Lengfeld</div>
+                    <div class="brand-subtitle">Würzburg &middot; Einsatzleitsystem</div>
+                </div>
+            </div>
             <div id="statusIndicator" class="status-indicator inactive">AWAITING DISPATCH</div>
-            <div class="header-title">Einsatzmonitor</div>
             <div class="clocks-container">
                 <div class="clock-label">Zeit:</div>
                 <div id="clock" class="realtime-clock">00:00:00</div>
@@ -95,22 +105,46 @@
             setTimeout(() => { map.invalidateSize(); }, 500);
         }
 
-        async function updateMapLocation(locationString) {
-            if (!map) return;
-            try {
-                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationString)}`);
-                const data = await res.json();
-                if (data && data.length > 0) {
-                    const lat = parseFloat(data[0].lat);
-                    const lon = parseFloat(data[0].lon);
+        async function geocode(query) {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
+            if (!res.ok) {
+                console.error(`Geocoding request failed for "${query}": HTTP ${res.status}`);
+                return null;
+            }
+            const data = await res.json();
+            return (data && data.length > 0) ? data[0] : null;
+        }
 
-                    if (marker) {
-                        marker.setLatLng([lat, lon]);
-                    } else {
-                        marker = L.marker([lat, lon]).addTo(map);
+        async function updateMapLocation(locationString) {
+            if (!map || !locationString) return;
+            try {
+                let result = await geocode(locationString);
+
+                // Fallback: full address (street + house number) often fails on Nominatim.
+                // Retry with just the last two comma-separated parts (typically "PLZ Stadt").
+                if (!result) {
+                    const parts = locationString.split(',').map(p => p.trim()).filter(Boolean);
+                    if (parts.length > 1) {
+                        const fallbackQuery = parts.slice(-2).join(', ');
+                        console.warn(`No geocoding result for "${locationString}", retrying with "${fallbackQuery}"`);
+                        result = await geocode(fallbackQuery);
                     }
-                    map.setView([lat, lon], 15);
                 }
+
+                if (!result) {
+                    console.warn(`Could not geocode location: "${locationString}"`);
+                    return;
+                }
+
+                const lat = parseFloat(result.lat);
+                const lon = parseFloat(result.lon);
+
+                if (marker) {
+                    marker.setLatLng([lat, lon]);
+                } else {
+                    marker = L.marker([lat, lon]).addTo(map);
+                }
+                map.setView([lat, lon], 15);
             } catch (err) {
                 console.error("Geocoding failed", err);
             }
@@ -156,8 +190,14 @@
             document.getElementById('timer').innerText = `${pad(mins)}:${pad(secs)}`;
         }
 
+        function parseServerTimestamp(timestamp) {
+            // Server stores timestamps as UTC in "YYYY-MM-DD HH:MM:SS" format without a
+            // timezone marker. new Date() would otherwise parse that as local time.
+            return new Date(timestamp.replace(' ', 'T') + 'Z');
+        }
+
         function startTimer(timestamp) {
-            activeAlarmTime = timestamp ? new Date(timestamp) : new Date();
+            activeAlarmTime = timestamp ? parseServerTimestamp(timestamp) : new Date();
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(updateTimer, 1000);
             updateTimer();
@@ -179,10 +219,29 @@
                  .replace(/'/g, "&#039;");
         }
 
+        let currentAlarm = null;
+
+        const KEYWORD_ICONS = [
+            { match: /ölspur/i, icon: '🛢️' },
+            { match: /brand/i, icon: '🔥' },
+            { match: /rauch/i, icon: '💨' },
+            { match: /person.*such|verm/i, icon: '🔍' },
+            { match: /eingeklemmt/i, icon: '⚠️' },
+            { match: /baum|ast/i, icon: '🌳' },
+            { match: /hvo/i, icon: '🚑' }
+        ];
+
+        function iconForKeyword(keyword) {
+            const found = KEYWORD_ICONS.find(k => k.match.test(keyword || ''));
+            return found ? found.icon : '🚨';
+        }
+
         function renderActiveAlarm(alarm) {
+            currentAlarm = alarm;
+
             const container = document.getElementById('activeAlarmContainer');
             container.innerHTML = `
-                <div class="active-alarm-keyword">${escapeHtml(alarm.keyword)}</div>
+                <div class="active-alarm-keyword">${iconForKeyword(alarm.keyword)} ${escapeHtml(alarm.keyword)}</div>
                 <div class="active-alarm-location">${escapeHtml(alarm.location)}</div>
                 <div class="active-alarm-units"><strong>Fahrzeuge:</strong> ${escapeHtml(alarm.units)}</div>
                 <div class="active-alarm-raw">${escapeHtml(alarm.raw_text)}</div>
@@ -195,58 +254,109 @@
 
             startTimer(alarm.timestamp);
 
-            if (alarm.location) {
+            if (alarm.location && map) {
                 updateMapLocation(alarm.location);
             }
+        }
+
+        function renderNoActiveAlarm() {
+            currentAlarm = null;
+            document.getElementById('activeAlarmContainer').innerHTML = '<div class="no-alarm-msg">Kein aktiver Einsatz</div>';
+
+            const statusInd = document.getElementById('statusIndicator');
+            statusInd.innerText = "AWAITING DISPATCH";
+            statusInd.classList.remove('active');
+            statusInd.classList.add('inactive');
+
+            stopTimer();
         }
 
         function createRecentAlarmElement(alarm) {
             const div = document.createElement('div');
             div.className = 'recent-alarm-card';
             div.innerHTML = `
-                <div class="recent-keyword">${escapeHtml(alarm.keyword)}</div>
+                <div class="recent-keyword">${iconForKeyword(alarm.keyword)} ${escapeHtml(alarm.keyword)}</div>
                 <div class="recent-location">${escapeHtml(alarm.location)}</div>
                 <div class="recent-time">${escapeHtml(alarm.timestamp)}</div>
             `;
             return div;
         }
 
+        const FMS_META = {
+            '1': { label: 'Status 1', color: '#2ea043' },
+            '2': { label: 'Status 2', color: '#1f6feb' },
+            '3': { label: 'Status 3', color: '#d29922' },
+            '4': { label: 'Status 4', color: '#d00' },
+            '5': { label: 'Status 5', color: '#a371f7' },
+            '6': { label: 'Status 6', color: '#555' }
+        };
+
         async function loadAssignments() {
             try {
-                const res = await fetch('/api/assignments');
-                if (res.ok) {
-                    const assignments = await res.json();
+                const [vehiclesRes, assignmentsRes] = await Promise.all([
+                    fetch('/api/vehicles'),
+                    fetch('/api/assignments')
+                ]);
+                if (vehiclesRes.ok && assignmentsRes.ok) {
+                    const vehicles = await vehiclesRes.json();
+                    const assignments = await assignmentsRes.json();
                     const grid = document.getElementById('assignmentsGrid');
                     grid.innerHTML = '';
 
-                    const vehicleMap = {};
+                    const crewByVehicle = {};
                     assignments.forEach(a => {
-                        if (!vehicleMap[a.vehicle_callsign]) {
-                            vehicleMap[a.vehicle_callsign] = [];
-                        }
-                        vehicleMap[a.vehicle_callsign].push(a);
+                        if (!crewByVehicle[a.vehicle_id]) crewByVehicle[a.vehicle_id] = [];
+                        crewByVehicle[a.vehicle_id].push(a);
                     });
 
-                    for (const [vehicle, crew] of Object.entries(vehicleMap)) {
+                    vehicles.forEach(v => {
                         const tile = document.createElement('div');
                         tile.className = 'assignment-tile';
+                        const meta = FMS_META[String(v.fms_status || '2')] || FMS_META['2'];
+                        tile.style.borderLeftColor = meta.color;
+
+                        const header = document.createElement('div');
+                        header.style.display = 'flex';
+                        header.style.justifyContent = 'space-between';
+                        header.style.alignItems = 'center';
 
                         const vTitle = document.createElement('div');
                         vTitle.className = 'vehicle-title';
-                        vTitle.innerText = escapeHtml(vehicle);
-                        tile.appendChild(vTitle);
+                        vTitle.innerText = escapeHtml(v.callsign);
+                        header.appendChild(vTitle);
 
-                        crew.forEach(c => {
+                        const badge = document.createElement('span');
+                        badge.innerText = meta.label;
+                        badge.style.backgroundColor = meta.color;
+                        badge.style.color = '#fff';
+                        badge.style.fontSize = '0.75rem';
+                        badge.style.fontWeight = 'bold';
+                        badge.style.padding = '2px 8px';
+                        badge.style.borderRadius = '3px';
+                        header.appendChild(badge);
+
+                        tile.appendChild(header);
+
+                        const crew = crewByVehicle[v.id] || [];
+                        if (crew.length === 0) {
                             const cRow = document.createElement('div');
                             cRow.className = 'crew-row';
-                            cRow.innerText = `${escapeHtml(c.crew_role)}: ${escapeHtml(c.crew_name)}`;
+                            cRow.innerText = 'Keine Besatzung zugewiesen';
                             tile.appendChild(cRow);
-                        });
+                        } else {
+                            crew.forEach(c => {
+                                const cRow = document.createElement('div');
+                                cRow.className = 'crew-row';
+                                cRow.innerText = `${escapeHtml(c.crew_role)}: ${escapeHtml(c.crew_name)}`;
+                                tile.appendChild(cRow);
+                            });
+                        }
 
                         grid.appendChild(tile);
-                    }
-                    if (Object.keys(vehicleMap).length === 0) {
-                        grid.innerHTML = '<div class="no-assignments">Keine aktiven Fahrzeuge</div>';
+                    });
+
+                    if (vehicles.length === 0) {
+                        grid.innerHTML = '<div class="no-assignments">Keine Fahrzeuge angelegt</div>';
                     }
                 }
             } catch (e) {
@@ -266,20 +376,56 @@
                 const recentList = document.getElementById('recentAlarmsList');
                 recentList.innerHTML = '';
 
-                if (alarms.length > 0) {
-                    renderActiveAlarm(alarms[0]);
+                const active = alarms.find(a => !a.ended_at);
 
-                    for (let i = 1; i < alarms.length; i++) {
-                        recentList.appendChild(createRecentAlarmElement(alarms[i]));
-                    }
+                if (active) {
+                    renderActiveAlarm(active);
                 } else {
-                    document.getElementById('activeAlarmContainer').innerHTML = '<div class="no-alarm-msg">Kein aktiver Einsatz</div>';
-                    stopTimer();
+                    renderNoActiveAlarm();
                 }
+
+                alarms.filter(a => a.id !== (active && active.id)).forEach(a => {
+                    recentList.appendChild(createRecentAlarmElement(a));
+                });
 
                 await loadAssignments();
             } catch (err) {
                 console.error("Failed to load initial data", err);
+            }
+        }
+
+        function playGong() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const now = ctx.currentTime;
+                [523.25, 659.25, 783.99].forEach((freq, i) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0, now);
+                    gain.gain.linearRampToValueAtTime(0.4, now + 0.05 + i * 0.15);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 2.5 + i * 0.15);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(now + i * 0.15);
+                    osc.stop(now + 2.6 + i * 0.15);
+                });
+            } catch (e) {
+                console.error('Gong playback failed', e);
+            }
+        }
+
+        function announceAlarm(alarm) {
+            try {
+                if (!('speechSynthesis' in window)) return;
+                const text = `Einsatzalarm: ${alarm.keyword}. Einsatzort: ${alarm.location}.`;
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'de-DE';
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(utterance);
+            } catch (e) {
+                console.error('Alarm announcement failed', e);
             }
         }
 
@@ -300,6 +446,29 @@
                 }
 
                 renderActiveAlarm(newAlarm);
+                playGong();
+                announceAlarm(newAlarm);
+
+                const gridEl = document.querySelector('.monitor-grid-container');
+                if (gridEl) {
+                    gridEl.classList.remove('alarm-flash');
+                    void gridEl.offsetWidth;
+                    gridEl.classList.add('alarm-flash');
+                    setTimeout(() => gridEl.classList.remove('alarm-flash'), 5000);
+                }
+            });
+
+            evtSource.addEventListener('alarm_ended', (e) => {
+                const data = JSON.parse(e.data);
+                if (currentAlarm && currentAlarm.id === data.id) {
+                    const recentList = document.getElementById('recentAlarmsList');
+                    recentList.prepend(createRecentAlarmElement(currentAlarm));
+                    renderNoActiveAlarm();
+                }
+            });
+
+            evtSource.addEventListener('vehicle_status', () => {
+                loadAssignments();
             });
 
             evtSource.onerror = (err) => {
@@ -307,10 +476,26 @@
             };
         }
 
+        function unlockSound() {
+            const overlay = document.getElementById('soundUnlockOverlay');
+            if (overlay) overlay.remove();
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                ctx.resume();
+            } catch (e) { /* ignore */ }
+            if ('speechSynthesis' in window) {
+                const primer = new SpeechSynthesisUtterance(' ');
+                window.speechSynthesis.speak(primer);
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
+            const overlay = document.getElementById('soundUnlockOverlay');
+            if (overlay) overlay.addEventListener('click', unlockSound, { once: true });
+
             clockInterval = setInterval(updateClock, 1000);
             updateClock();
-            initMap();
+            try { initMap(); } catch (e) { console.error('Map init failed', e); }
             fetchWeather();
             loadInitialData();
             initSSE();
